@@ -15,11 +15,41 @@
       try {
         var s = JSON.parse(localStorage.getItem('portfolio-settings') || '{}')
         document.documentElement.dataset.theme =
-          s.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          s.theme ||
+          (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
       } catch (e) {}
     </script>
-    <title>Jairo inder Beeck</title>
-    <meta name="description" content="Portfolio of Jairo inder Beeck." />
+    <title>Hi, Welcome to my Creative Space</title>
+    <meta
+      name="description"
+      content="Hi, welcome to my creative space. I'm Jairo in der Beeck, a digital product designer working on system design and AI enablement."
+    />
+    <meta name="author" content="Jairo in der Beeck" />
+    <meta name="theme-color" content="#ecebea" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#131415" media="(prefers-color-scheme: dark)" />
+
+    <!-- Link previews (Slack, iMessage, LinkedIn, ...) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Jairo in der Beeck" />
+    <meta property="og:title" content="Hi, Welcome to my Creative Space" />
+    <meta
+      property="og:description"
+      content="Hi, welcome to my creative space. I'm Jairo in der Beeck, a digital product designer working on system design and AI enablement."
+    />
+    <meta property="og:locale" content="en" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Hi, Welcome to my Creative Space" />
+    <meta
+      name="twitter:description"
+      content="Hi, welcome to my creative space. I'm Jairo in der Beeck, a digital product designer working on system design and AI enablement."
+    />
+
+    <!-- A little dot grid as the tab icon; adapts to light and dark tabs -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cstyle%3Ecircle%7Bfill:%233c3c3c%7D@media (prefers-color-scheme:dark)%7Bcircle%7Bfill:%23d9dadb%7D%7D%3C/style%3E%3Ccircle cx='6' cy='6' r='3'/%3E%3Ccircle cx='16' cy='6' r='3'/%3E%3Ccircle cx='26' cy='6' r='3'/%3E%3Ccircle cx='6' cy='16' r='3'/%3E%3Ccircle cx='16' cy='16' r='5'/%3E%3Ccircle cx='26' cy='16' r='3'/%3E%3Ccircle cx='6' cy='26' r='3'/%3E%3Ccircle cx='16' cy='26' r='3'/%3E%3Ccircle cx='26' cy='26' r='3'/%3E%3C/svg%3E"
+    />
   </head>
   <body>
     <div id="root"></div>

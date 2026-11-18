@@ -24,6 +24,22 @@ const ACTIVE_MIX = 0.7 // while a picture shows, 30% of the idle wave stays aliv
 const COLOR_SHIFT = 0.1
 const SHADE_STEPS = 10 // shades each side of neutral, so the shift is quantized into 21 steps
 
+// Sub pages: the dot field shrinks to part of its area (1/3 of the page instead of
+// 2/3). The dots don't slide; they dissolve, grainy and noisy, from the far edge toward
+// the new boundary, and grow back the same way in reverse.
+const REVEAL_SWEEP = 3000 // ms the whole sweep takes, last dot included
+// A single dot fades quickly in the middle of the sweep and slowly at its start and
+// end, so the first dots drift away and the last few linger before they go.
+const REVEAL_FADE_FAST = 260 // ms, dots in the middle of the sweep
+const REVEAL_FADE_SLOW = 800 // ms, the first and last dots
+const REVEAL_SOFT = 0.09 // while sweeping, pictures fade with springs this much softer (~1s)
+
+// The share of dots that has gone follows an ease-in-out curve over the sweep (cubic):
+// a slow start, a faster middle, and a slow finish where the last few dots go one by
+// one. This is its inverse: the moment (0..1) at which a given share is reached.
+const sweepMoment = (share: number) =>
+  share < 0.5 ? Math.pow(share / 4, 1 / 3) : 1 - Math.pow((1 - share) / 4, 1 / 3)
+
 const STATIC_T = 7 // frozen moment of the wave when animation is off
 const LEAVE_DELAY = 180 // ms before a picture dissolves back to the wave, so quick re-hovers never flash
 
@@ -60,12 +76,17 @@ type Props = {
   /** Pixels at the bottom that are covered by UI; the game stays above them. */
   insetBottom?: number
   onGame?: (state: GameState) => void
+  /** Part of the field that shows dots: 1 = all, 0.5 = the first half. */
+  reveal?: number
+  /** 'x' keeps the left part (desktop), 'y' keeps the top part (mobile). */
+  revealAxis?: 'x' | 'y'
 }
 
 type Api = {
   setScene: (key: string | null) => void
   setAnimate: (animate: boolean) => void
   recolor: () => void
+  setReveal: (fraction: number, axis: 'x' | 'y') => void
 }
 
 type Pt = { x: number; y: number }
@@ -109,11 +130,13 @@ export default function DotField({
   theme,
   insetBottom = 0,
   onGame,
+  reveal = 1,
+  revealAxis = 'x',
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const apiRef = useRef<Api | null>(null)
-  const initial = useRef({ scene, animate })
+  const initial = useRef({ scene, animate, reveal, revealAxis })
   const insetRef = useRef(insetBottom)
   const onGameRef = useRef(onGame)
   useEffect(() => {
@@ -143,6 +166,15 @@ export default function DotField({
     let k = new Float32Array(0)
     let c = new Float32Array(0)
     let goldMask = new Uint8Array(0) // dots drawn in gold
+    // Visibility per dot (0..1) for the shrinking/growing field: each dot fades from
+    // visFrom to visTo over visDur ms, starting at visStart.
+    let revealPart = initial.current.reveal
+    let softUntil = 0 // pictures fade softly (not instantly) while the field sweeps
+    let revealAxisNow = initial.current.revealAxis
+    let visFrom = new Float32Array(0)
+    let visTo = new Float32Array(0)
+    let visStart = new Float64Array(0)
+    let visDur = new Float32Array(0)
     const goldDots: number[] = []
     let raf = 0
     let leaveTimer = 0
@@ -433,12 +465,83 @@ export default function DotField({
       if (!animating) render(STATIC_T)
     }
 
+    // how many columns (axis x) or rows (axis y) still show dots
+    const visibleCount = () =>
+      Math.round((revealAxisNow === 'x' ? cols : rows) * revealPart)
+    const isInside = (i: number, count: number) =>
+      revealAxisNow === 'x' ? i % cols < count : Math.floor(i / cols) < count
+
+    const visAt = (i: number, now: number) => {
+      const t = (now - visStart[i]) / visDur[i]
+      if (t <= 0) return visFrom[i]
+      if (t >= 1) return visTo[i]
+      return visFrom[i] + (visTo[i] - visFrom[i]) * t * t * (3 - 2 * t)
+    }
+
+    const setReveal = (fraction: number, axis: 'x' | 'y') => {
+      if (fraction === revealPart && axis === revealAxisNow) return
+      const now = performance.now()
+      const oldCount =
+        axis === revealAxisNow ? visibleCount() : axis === 'x' ? cols : rows
+      revealPart = fraction
+      revealAxisNow = axis
+      const count = visibleCount()
+      const moving: { i: number; key: number }[] = []
+      for (let i = 0; i < m.length; i++) {
+        const target = isInside(i, count) ? 1 : 0
+        if (target === visTo[i]) continue
+        visFrom[i] = visAt(i, now)
+        visTo[i] = target
+        if (!animating) {
+          visStart[i] = -Infinity
+          continue
+        }
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        const pos = axis === 'x' ? col : row
+        const across = axis === 'x' ? row : col
+        // 0 = goes first, 1 = goes last: hiding starts at the far edge and works back
+        // toward the new boundary; showing starts at the boundary and works outward
+        const order =
+          target === 0
+            ? (oldCount - 1 - pos) / Math.max(1, oldCount - count)
+            : (pos - oldCount) / Math.max(1, count - oldCount)
+        // an organic, wobbly edge plus per-dot grain
+        const wobble =
+          (Math.sin(across * 0.21 + 1.3) + Math.sin(across * 0.07 + pos * 0.05)) * 0.06
+        const grain = (hash(i * 7 + 3) - 0.5) * 0.3
+        moving.push({ i, key: order + wobble + grain })
+      }
+      // Ranked in that order, the dots are spread over the sweep along the S-curve.
+      moving.sort((a, b) => a.key - b.key)
+      moving.forEach(({ i }, rank) => {
+        const share = moving.length > 1 ? rank / (moving.length - 1) : 1
+        const when = sweepMoment(share)
+        const edge = 1 - Math.sin(Math.PI * share) // 1 for the first and last dots
+        visDur[i] = REVEAL_FADE_FAST + (REVEAL_FADE_SLOW - REVEAL_FADE_FAST) * edge
+        visStart[i] = now + when * (REVEAL_SWEEP - REVEAL_FADE_SLOW)
+      })
+      if (animating) softUntil = now + REVEAL_SWEEP
+      // pictures re-fit themselves to the part that is still visible
+      if (current && current !== SNAKE) {
+        const pic = sample(current)
+        for (let i = 0; i < m.length; i++) tP[i] = pic[i]
+      }
+      if (!animating) snap()
+    }
+
     const sample = (key: string) => {
       const off = document.createElement('canvas')
       off.width = cols
       off.height = rows
       const o = off.getContext('2d', { willReadFrequently: true })!
-      scenes[key]?.(o, cols, rows)
+      // scenes are drawn into the visible part only, so they stay centred in it
+      const count = visibleCount()
+      scenes[key]?.(
+        o,
+        revealAxisNow === 'x' ? count : cols,
+        revealAxisNow === 'y' ? count : rows,
+      )
       const data = o.getImageData(0, 0, cols, rows).data
       const out = new Float32Array(cols * rows)
       for (let i = 0; i < out.length; i++) out[i] = data[i * 4 + 3] / 255
@@ -454,6 +557,12 @@ export default function DotField({
       tM = new Float32Array(n)
       tP = new Float32Array(n)
       goldMask = new Uint8Array(n)
+      visFrom = new Float32Array(n)
+      visTo = new Float32Array(n)
+      visStart = new Float64Array(n).fill(-Infinity)
+      visDur = new Float32Array(n).fill(REVEAL_FADE_FAST)
+      const count = visibleCount()
+      for (let i = 0; i < n; i++) visFrom[i] = visTo[i] = isInside(i, count) ? 1 : 0
       k = new Float32Array(n)
       c = new Float32Array(n)
       for (let i = 0; i < n; i++) {
@@ -485,12 +594,17 @@ export default function DotField({
       const cellH = wrap.clientHeight / rows
       goldDots.length = 0
       for (const list of shadeDots) list.length = 0
+      const now = performance.now()
       for (let r = 0; r < rows; r++) {
         for (let col = 0; col < cols; col++) {
           const i = r * cols + col
           const rw = WAVE_MIN + WAVE_RANGE * wave(col * GRID, r * GRID, t)
           const rp = BASE_R + (MAX_R - BASE_R) * p[i]
-          const rad = Math.min(CAP_R, Math.max(0.3, rw + (rp - rw) * m[i]))
+          const vis = visAt(i, now)
+          if (vis <= 0.01) continue
+          let rad = Math.min(CAP_R, Math.max(0.3, rw + (rp - rw) * m[i]))
+          // fading dots simply shrink (the grain is in the timing, not in flicker)
+          if (vis < 0.999) rad *= vis
           const x = (col + 0.5) * cellW
           const y = (r + 0.5) * cellH
           if (goldMask[i]) {
@@ -529,10 +643,13 @@ export default function DotField({
     const step = (dt: number) => {
       const sub = 4 // sub-steps keep the stiff springs stable and smooth
       const h = dt / sub
+      // during a sweep, shapes fade away (or in) over about a second instead of snapping
+      const soft = performance.now() < softUntil ? REVEAL_SOFT : 1
+      const softDamp = Math.sqrt(soft)
       let pending = 0
       for (let i = 0; i < m.length; i++) {
-        const kk = k[i]
-        const cc = c[i]
+        const kk = k[i] * soft
+        const cc = c[i] * softDamp
         for (let s = 0; s < sub; s++) {
           mv[i] += (kk * (tM[i] - m[i]) - cc * mv[i]) * h
           m[i] += mv[i] * h
@@ -652,7 +769,7 @@ export default function DotField({
       if (!animating) render(STATIC_T)
     }
 
-    apiRef.current = { setScene, setAnimate, recolor }
+    apiRef.current = { setScene, setAnimate, recolor, setReveal }
     recolor()
     resize()
     if (animating) start()
@@ -676,6 +793,7 @@ export default function DotField({
   useEffect(() => apiRef.current?.setAnimate(animate), [animate])
   useEffect(() => apiRef.current?.setScene(scene), [scene])
   useEffect(() => apiRef.current?.recolor(), [theme])
+  useEffect(() => apiRef.current?.setReveal(reveal, revealAxis), [reveal, revealAxis])
 
   return (
     <div ref={wrapRef} className="relative h-full w-full touch-none" aria-hidden="true">

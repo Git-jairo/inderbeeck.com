@@ -17,6 +17,13 @@ const CAP_R = PITCH * 0.44 // hard cap so spring overshoot never merges dots
 const WAVE_MIN = 0.4 * GRID // idle wave: smallest dot
 const WAVE_RANGE = 2.0 * GRID // idle wave: how much dots swell on a crest
 const ACTIVE_MIX = 0.7 // while a picture shows, 30% of the idle wave stays alive behind it
+// Subtle contrast boost while a picture shows: dots that belong to the picture move
+// 10% toward the text colour (brighter in dark mode, darker in light mode) and the
+// dots around it 10% toward the background. Only the contrast changes, not the hue,
+// and it fades in with the picture, so the colour change itself is never noticed.
+const COLOR_SHIFT = 0.1
+const SHADE_STEPS = 10 // shades each side of neutral, so the shift is quantized into 21 steps
+
 const STATIC_T = 7 // frozen moment of the wave when animation is off
 const LEAVE_DELAY = 180 // ms before a picture dissolves back to the wave, so quick re-hovers never flash
 
@@ -77,6 +84,14 @@ function wave(x: number, y: number, t: number) {
   return v * v * (3 - 2 * v)
 }
 
+// '#rgb' / '#rrggbb' -> [r, g, b], or null when the value isn't a hex colour
+function parseHex(value: string): number[] | null {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value)
+  if (!m) return null
+  const h = m[1].length === 3 ? m[1].replace(/./g, '$&$&') : m[1]
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16))
+}
+
 const KEY_DIRS: Record<string, Pt> = {
   ArrowUp: { x: 0, y: -1 },
   ArrowDown: { x: 0, y: 1 },
@@ -135,6 +150,10 @@ export default function DotField({
     let t0 = performance.now()
     let dotColor = '#999'
     let goldColor = '#b99c58'
+    // shades[SHADE_STEPS] = the neutral dot colour; lower = toward the background,
+    // higher = toward the text colour
+    const shades: string[] = Array.from({ length: SHADE_STEPS * 2 + 1 }, () => '#999')
+    const shadeDots: number[][] = Array.from({ length: SHADE_STEPS * 2 + 1 }, () => [])
 
     // ---------- Snake (easter egg) ----------
     // The board is a grid where one cell = 2x2 dots.
@@ -400,6 +419,17 @@ export default function DotField({
       const css = getComputedStyle(document.documentElement)
       dotColor = css.getPropertyValue('--dot').trim() || dotColor
       goldColor = css.getPropertyValue('--gold').trim() || goldColor
+      const base = parseHex(dotColor)
+      const fg = parseHex(css.getPropertyValue('--fg').trim())
+      const bg = parseHex(css.getPropertyValue('--bg').trim())
+      for (let i = 0; i < shades.length; i++) {
+        const shift = ((i - SHADE_STEPS) / SHADE_STEPS) * COLOR_SHIFT
+        const target = shift >= 0 ? fg : bg
+        shades[i] =
+          base && target
+            ? `rgb(${[0, 1, 2].map((c) => Math.round(base[c] + (target[c] - base[c]) * Math.abs(shift))).join(',')})`
+            : dotColor
+      }
       if (!animating) render(STATIC_T)
     }
 
@@ -454,8 +484,7 @@ export default function DotField({
       const cellW = wrap.clientWidth / cols
       const cellH = wrap.clientHeight / rows
       goldDots.length = 0
-      ctx.fillStyle = dotColor
-      ctx.beginPath()
+      for (const list of shadeDots) list.length = 0
       for (let r = 0; r < rows; r++) {
         for (let col = 0; col < cols; col++) {
           const i = r * cols + col
@@ -468,11 +497,23 @@ export default function DotField({
             goldDots.push(x, y, rad)
             continue
           }
-          ctx.moveTo(x + rad, y)
-          ctx.arc(x, y, rad, 0, Math.PI * 2)
+          // 0 = background dot, 1 = picture dot; scaled by how far the picture is "in"
+          const inPicture = Math.min(1, Math.max(0, p[i]))
+          const mode = Math.min(1, Math.max(0, m[i] / ACTIVE_MIX))
+          const shade = SHADE_STEPS + Math.round(mode * (inPicture * 2 - 1) * SHADE_STEPS)
+          shadeDots[shade].push(x, y, rad)
         }
       }
-      ctx.fill()
+      shadeDots.forEach((list, shade) => {
+        if (!list.length) return
+        ctx.fillStyle = shades[shade]
+        ctx.beginPath()
+        for (let j = 0; j < list.length; j += 3) {
+          ctx.moveTo(list[j] + list[j + 2], list[j + 1])
+          ctx.arc(list[j], list[j + 1], list[j + 2], 0, Math.PI * 2)
+        }
+        ctx.fill()
+      })
       if (goldDots.length) {
         ctx.fillStyle = goldColor
         ctx.beginPath()

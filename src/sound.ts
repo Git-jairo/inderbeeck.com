@@ -165,10 +165,11 @@ export function playStartup(volume = 0.05) {
 
 // ---------- Typing ticks ----------
 // A very soft keyboard tick for the chat: a tiny filtered noise click plus a faint
-// low "thock". Peak level stays well under 10%, and every tick differs slightly.
+// low "thock". Kept quiet (default about 2%, hard cap under 10%), and every tick
+// differs slightly.
 let tickBuffer: AudioBuffer | null = null
 
-export function playTick(volume = 0.045) {
+export function playTick(volume = 0.022) {
   const ac = getCtx()
   if (!ac || ac.state !== 'running') return // never queue ticks while audio is locked
   if (!tickBuffer) {
@@ -196,7 +197,7 @@ export function playTick(volume = 0.045) {
   const thockGain = ac.createGain()
   thock.type = 'sine'
   thock.frequency.value = 120 + Math.random() * 40
-  thockGain.gain.setValueAtTime(v * 0.5, t)
+  thockGain.gain.setValueAtTime(v * 0.35, t)
   thockGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05)
   thock.connect(thockGain).connect(ac.destination)
   thock.start(t)

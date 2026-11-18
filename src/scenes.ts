@@ -232,6 +232,7 @@ const track: Scene = (ctx, w, h) => {
 // so more opaque = bigger dot. The strongest tone of each image is stretched to a
 // fully grown dot, so the PNGs don't have to be drawn at full opacity.
 const IMAGE_SCALE = 1 // 1 = the image is as tall as the dot grid; lower = smaller
+const IMAGE_DENSITY = 0.7 // below 1 = denser: lighter tones grow bigger dots (1 = as drawn)
 
 const imageScene = (file: string): Scene => {
   const img = new Image()
@@ -248,7 +249,8 @@ const imageScene = (file: string): Scene => {
     if (!max) return
     const gain = 255 / max
     for (let i = 3; i < data.data.length; i += 4)
-      data.data[i] = Math.min(255, data.data[i] * gain)
+      data.data[i] =
+        255 * Math.pow(Math.min(1, (data.data[i] * gain) / 255), IMAGE_DENSITY)
     ctx.putImageData(data, 0, 0)
   }
 }

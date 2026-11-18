@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { playTick } from './sound'
 
 type Props = {
@@ -15,6 +15,10 @@ type Props = {
 }
 
 // Same type as the main titles / nav links.
+// Not every letter ticks, and never faster than this, so the typing stays calm.
+const TICK_CHANCE = 0.5
+const TICK_MIN_GAP = 85 // ms
+
 const textBtn =
   'cursor-pointer text-base leading-6 text-fg underline-offset-[3px] hover:underline focus-visible:underline focus-visible:outline-none disabled:cursor-default disabled:no-underline disabled:opacity-30 max-md:flex max-md:min-h-11 max-md:min-w-11 max-md:items-center'
 
@@ -32,6 +36,7 @@ export default function Chat({
   const last = page === pages.length - 1
   const [chars, setChars] = useState(0) // letters of the current message typed so far
   const [ready, setReady] = useState(false) // for the first fade-in
+  const lastTick = useRef(0)
   const shown = reduceMotion ? text.length : Math.min(chars, text.length)
   const typing = shown < text.length
 
@@ -49,7 +54,14 @@ export default function Chat({
       chars === 0 ? 700 : 22 + Math.random() * 40 + (/[,.!?]/.test(previous) ? 170 : 0)
     const id = window.setTimeout(() => {
       setChars((c) => c + 1)
-      if (sound) playTick()
+      if (
+        sound &&
+        Math.random() < TICK_CHANCE &&
+        performance.now() - lastTick.current > TICK_MIN_GAP
+      ) {
+        lastTick.current = performance.now()
+        playTick()
+      }
     }, delay)
     return () => window.clearTimeout(id)
   }, [active, typing, chars, text, sound])

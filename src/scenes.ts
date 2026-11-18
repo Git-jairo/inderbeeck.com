@@ -227,7 +227,34 @@ const track: Scene = (ctx, w, h) => {
   ctx.fill()
 }
 
+// ---------- Hover visuals (PNGs in public/visuals) ----------
+// White shapes on a transparent background: the transparency is what the dots read,
+// so more opaque = bigger dot. The strongest tone of each image is stretched to a
+// fully grown dot, so the PNGs don't have to be drawn at full opacity.
+const IMAGE_SCALE = 1 // 1 = the image is as tall as the dot grid; lower = smaller
+
+const imageScene = (file: string): Scene => {
+  const img = new Image()
+  img.src = encodeURI(`/visuals/${file}`) // preload now, so it is ready on first hover
+  return (ctx, w, h) => {
+    if (!img.complete || !img.naturalWidth) return
+    const box = Math.min(w, h) * IMAGE_SCALE
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, (w - box) / 2, (h - box) / 2, box, box)
+    const data = ctx.getImageData(0, 0, w, h)
+    let max = 0
+    for (let i = 3; i < data.data.length; i += 4) max = Math.max(max, data.data[i])
+    if (!max) return
+    const gain = 255 / max
+    for (let i = 3; i < data.data.length; i += 4)
+      data.data[i] = Math.min(255, data.data[i] * gain)
+    ctx.putImageData(data, 0, 0)
+  }
+}
+
 export const scenes: Record<string, Scene> = {
+  // drawn scenes (used by the opening chat)
   'product-design': productDesign,
   'ai-enablement': aiEnablement,
   'system-design': systemDesign,
@@ -235,14 +262,11 @@ export const scenes: Record<string, Scene> = {
   photography,
   chat,
   track,
-}
-
-// To use a real picture instead: load an Image and pass it to drawImageScene.
-export function drawImageScene(img: HTMLImageElement): Scene {
-  return (ctx, w, h) => {
-    const k = Math.max(w / img.width, h / img.height)
-    const iw = img.width * k
-    const ih = img.height * k
-    ctx.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih)
-  }
+  // PNG visuals shown when hovering a menu item
+  'hover:product-design': imageScene('Product Design.png'),
+  'hover:ai-enablement': imageScene('Ai Enablement.png'),
+  'hover:system-design': imageScene('System Design.png'),
+  'hover:sports': imageScene('Sports.png'),
+  'hover:mail': imageScene('Mail.png'),
+  'hover:phone': imageScene('Phone.png'),
 }

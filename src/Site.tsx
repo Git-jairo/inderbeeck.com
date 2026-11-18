@@ -150,14 +150,19 @@ function Site() {
     if (state.event === 'die') playNote(0, 0.06)
   }
 
-  // contact links get their own soft chime instead of a nav note
-  const ping = {
-    onMouseEnter: () => sound && playChime(),
-    onFocus: () => sound && playChime(),
+  // Contact links get their own soft chime instead of a nav note, plus their visual.
+  const ping = (key: 'mail' | 'phone') => {
+    const enter = () => {
+      setHover(`hover:${key}`)
+      if (sound) playChime()
+    }
+    const leave = () => setHover(null)
+    return { onMouseEnter: enter, onFocus: enter, onMouseLeave: leave, onBlur: leave }
   }
 
+  // Hovering a menu item shows its PNG visual in the dots (public/visuals).
   const show = (key: string | null) => {
-    setHover(key)
+    setHover(key ? `hover:${key}` : null)
     if (key && sound) playNote(NAV_NOTE)
   }
 
@@ -264,6 +269,7 @@ function Site() {
           page={page}
           active={intro}
           reduceMotion={reduceMotion}
+          sound={sound}
           onPage={onPage}
           onFinish={() => setIntro(false)}
         />
@@ -301,13 +307,13 @@ function Site() {
                       <a
                         className={linkBase}
                         href="mailto:Jairo@inderbeeck.com"
-                        {...ping}
+                        {...ping('mail')}
                       >
                         Jairo@inderbeeck.com
                       </a>
                     </li>
                     <li {...fade(9)}>
-                      <a className={linkBase} href="tel:+31610487300" {...ping}>
+                      <a className={linkBase} href="tel:+31610487300" {...ping('phone')}>
                         +31 6 104 873 00
                       </a>
                     </li>

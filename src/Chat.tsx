@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { playTick } from './sound'
 
 type Props = {
   pages: string[]
@@ -6,6 +7,8 @@ type Props = {
   /** false once the chat is finished or skipped: it fades out and stops taking input. */
   active: boolean
   reduceMotion: boolean
+  /** Soft keyboard ticks while a message is being typed. */
+  sound?: boolean
   className?: string
   onPage: (index: number) => void
   onFinish: () => void
@@ -20,6 +23,7 @@ export default function Chat({
   page,
   active,
   reduceMotion,
+  sound = false,
   className = '',
   onPage,
   onFinish,
@@ -43,9 +47,12 @@ export default function Chat({
     const previous = text[chars - 1] ?? ''
     const delay =
       chars === 0 ? 700 : 22 + Math.random() * 40 + (/[,.!?]/.test(previous) ? 170 : 0)
-    const id = window.setTimeout(() => setChars((c) => c + 1), delay)
+    const id = window.setTimeout(() => {
+      setChars((c) => c + 1)
+      if (sound) playTick()
+    }, delay)
     return () => window.clearTimeout(id)
-  }, [active, typing, chars, text])
+  }, [active, typing, chars, text, sound])
 
   const go = useCallback(
     (index: number) => {

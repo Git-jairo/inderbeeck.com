@@ -162,3 +162,43 @@ export function playStartup(volume = 0.05) {
   window.addEventListener('pointerdown', attempt)
   window.addEventListener('keydown', attempt)
 }
+
+// ---------- Typing ticks ----------
+// A very soft keyboard tick for the chat: a tiny filtered noise click plus a faint
+// low "thock". Peak level stays well under 10%, and every tick differs slightly.
+let tickBuffer: AudioBuffer | null = null
+
+export function playTick(volume = 0.045) {
+  const ac = getCtx()
+  if (!ac || ac.state !== 'running') return // never queue ticks while audio is locked
+  if (!tickBuffer) {
+    const length = Math.floor(ac.sampleRate * 0.03)
+    tickBuffer = ac.createBuffer(1, length, ac.sampleRate)
+    const data = tickBuffer.getChannelData(0)
+    for (let i = 0; i < length; i++)
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3)
+  }
+  const t = ac.currentTime
+  const v = Math.min(volume, 0.09) * (0.75 + Math.random() * 0.5)
+
+  const click = ac.createBufferSource()
+  click.buffer = tickBuffer
+  const band = ac.createBiquadFilter()
+  band.type = 'bandpass'
+  band.frequency.value = 2200 + Math.random() * 1800
+  band.Q.value = 0.9
+  const clickGain = ac.createGain()
+  clickGain.gain.value = v
+  click.connect(band).connect(clickGain).connect(ac.destination)
+  click.start(t)
+
+  const thock = ac.createOscillator()
+  const thockGain = ac.createGain()
+  thock.type = 'sine'
+  thock.frequency.value = 120 + Math.random() * 40
+  thockGain.gain.setValueAtTime(v * 0.5, t)
+  thockGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05)
+  thock.connect(thockGain).connect(ac.destination)
+  thock.start(t)
+  thock.stop(t + 0.06)
+}
